@@ -16,7 +16,7 @@ class BallDetector:
         self.known_diameter = 180  # mm
         self.camera_height = 300   # mm from ground
         self.conf_threshold = conf_threshold
-        self.iou_threshold = iou_threshold
+        self.iou_threshold = iou_thresholdhttps://github.com/Thadzy/Vision-Calculate-Real-World-Coordinates-Thadchai.git
         
         # Define colors for different classes
         self.colors = {
