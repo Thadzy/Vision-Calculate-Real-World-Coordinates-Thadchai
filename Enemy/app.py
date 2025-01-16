@@ -1,67 +1,85 @@
-import cv2 
-import numpy as np 
-from matplotlib import pyplot as plt 
+import cv2
+import numpy as np
 
-# reading image 
-img = cv2.imread('/home/thadzy/Thadzy/ABU/Vision-Calculate-Real-World-Coordinates-Thadchai/Enemy/1000026397_b553a381283baf0729ac5d6a13c40a11-13_01_2025, 13_05_46.jpg') 
+def detect_robot_base(image):
+    # Convert to HSV colorspace
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+    # Stricter thresholds for red color (more saturated and brighter)
+    red_lower1 = np.array([0, 150, 100])    # Higher saturation minimum
+    red_upper1 = np.array([8, 255, 255])    # Narrower hue range
+    red_lower2 = np.array([172, 150, 100])  # Higher saturation minimum
+    red_upper2 = np.array([180, 255, 255])  # Narrower hue range
 
-# converting image into grayscale image 
-gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) 
+    # Create masks for red
+    red_mask1 = cv2.inRange(hsv, red_lower1, red_upper1)
+    red_mask2 = cv2.inRange(hsv, red_lower2, red_upper2)
+    red_mask = red_mask1 + red_mask2
 
-# setting threshold of gray image 
-_, threshold = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY) 
+    # Apply morphological operations to remove noise and fill gaps
+    kernel = np.ones((5,5), np.uint8)
+    red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, kernel)
+    red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, kernel)
 
-# using a findContours() function 
-contours, _ = cv2.findContours( 
-	threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
+    # Find contours
+    contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-i = 0
+    # Find the largest circular contour
+    best_contour = None
+    largest_area = 0
+    
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        perimeter = cv2.arcLength(contour, True)
+        
+        # Skip tiny contours
+        if area < 1000:  # Minimal area threshold
+            continue
+            
+        # Circularity check (perfect circle = 1)
+        circularity = 4 * np.pi * area / (perimeter * perimeter)
+        if circularity < 0.6:  # Not circular enough
+            continue
+        
+        if area > largest_area:
+            largest_area = area
+            best_contour = contour
 
-# list for storing names of shapes 
-for contour in contours: 
+    if best_contour is not None:
+        # Get measurements for the best contour
+        (x, y), radius = cv2.minEnclosingCircle(best_contour)
+        diameter = int(radius * 2)
+        
+        # Draw the contour and circle
+        cv2.drawContours(image, [best_contour], -1, (0, 255, 0), 3)
+        cv2.circle(image, (int(x), int(y)), int(radius), (255, 0, 0), 2)
+        
+        # Add text annotations
+        cv2.putText(image, f"Diameter: {diameter}px", (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-	# here we are ignoring first counter because 
-	# findcontour function detects whole image as shape 
-	if i == 0: 
-		i = 1
-		continue
+    return image
 
-	# cv2.approxPloyDP() function to approximate the shape 
-	approx = cv2.approxPolyDP( 
-		contour, 0.01 * cv2.arcLength(contour, True), True) 
-	
-	# using drawContours() function 
-	cv2.drawContours(img, [contour], 0, (0, 0, 255), 5) 
+# Initialize webcam
+cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    print("Cannot open camera")
+    exit()
 
-	# finding center point of shape 
-	M = cv2.moments(contour) 
-	if M['m00'] != 0.0: 
-		x = int(M['m10']/M['m00']) 
-		y = int(M['m01']/M['m00']) 
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        print("Can't receive frame. Exiting...")
+        break
 
-	# putting shape name at center of each shape 
-	if len(approx) == 3: 
-		cv2.putText(img, 'Triangle', (x, y), 
-					cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
+    # Process frame
+    result = detect_robot_base(frame)
+    
+    # Display result
+    cv2.imshow("Robot Base Detection", result)
+    
+    if cv2.waitKey(1) == ord('q'):
+        break
 
-	elif len(approx) == 4: 
-		cv2.putText(img, 'Quadrilateral', (x, y), 
-					cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
-
-	elif len(approx) == 5: 
-		cv2.putText(img, 'Pentagon', (x, y), 
-					cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
-
-	elif len(approx) == 6: 
-		cv2.putText(img, 'Hexagon', (x, y), 
-					cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
-
-	else: 
-		cv2.putText(img, 'circle', (x, y), 
-					cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2) 
-
-# displaying the image after drawing contours 
-cv2.imshow('shapes', img) 
-
-cv2.waitKey(0) 
-cv2.destroyAllWindows() 
+cap.release()
+cv2.destroyAllWindows()
